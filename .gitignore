@@ -1,0 +1,14 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Temporary audio files
+*.wav
+*.txt
+
+# IDE Settings
+.vscode/
+
+# macOS system files
+.DS_Store
