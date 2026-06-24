@@ -76,8 +76,7 @@ def analyze_audio_system(stimulus_path, recorded_path, output_img=PLOT_FILE):
 
     # 6. Plotting the Vertical Stack
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-    fig.suptitle("Hark Labs Audio System Characterization", fontsize=14, fontweight='bold')
-
+    fig.suptitle("Audio System Characterization", fontsize=14, fontweight='bold')
     # Top Plot: Transfer Function (Frequency Response)
     ax1.plot(freqs, magnitude_db, color='crimson', linewidth=2, label="Fundamental Magnitude")
     ax1.set_title("Transfer Function (Frequency Response)")
