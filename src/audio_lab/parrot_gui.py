@@ -1,15 +1,16 @@
 import tkinter as tk
 import threading
-from parrot_engine import PollyEngine
+# FIX 1: Point to the correct class name from parrot_engine
+from parrot_engine import ParrotEngine
 
 class PollyGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("🦜 Polly Simulator")
+        self.root.title("🦜 Parrot Simulator")
         self.root.geometry("400x300")
         self.root.resizable(False, False)
         
-        # --- UI State Configuration (Added 'processing' state) ---
+        # --- UI State Configuration ---
         self.states = {
             "sleeping": {"bg": "#2C3E50", "text": "#ECF0F1", "status": "💤 Polly is resting..."},
             "listening": {"bg": "#E74C3C", "text": "#FFFFFF", "status": "🔴 Listening! Speak now..."},
@@ -44,15 +45,28 @@ class PollyGUI:
         
         # --- Initialize Audio Engine ---
         try:
-            self.engine = PollyEngine(state_callback=self.set_ui_state)
+            # FIX 2: Instantiate using correct class and pass state callback
+            # If your parrot_engine loop requires manual interaction during this phase, 
+            # ensure it doesn't block this worker thread indefinitely.
+            self.engine = ParrotEngine()
+            
+            # Link the UI state switch directly into the engine state hook
+            # Note: You will need to add a small method to parrot_engine to store this hook.
+            self.engine.state_callback = self.set_ui_state
             
             print("🦜 Starting core audio runtime inside worker thread...")
-            self.worker_thread = threading.Thread(
-                target=self.engine.run_pipeline, 
-                args=(self.safe_destroy,)
-            )
-            self.worker_thread.daemon = True
-            self.worker_thread.start()
+            # If your engine has a long-running listening pipeline method (e.g. run_pipeline)
+            # we frame it here. For now, we point to a dummy runner thread loop if needed.
+            if hasattr(self.engine, 'run_pipeline'):
+                self.worker_thread = threading.Thread(
+                    target=self.engine.run_pipeline, 
+                    args=(self.safe_destroy,)
+                )
+                self.worker_thread.daemon = True
+                self.worker_thread.start()
+            else:
+                print("⚠️ Note: parrot_engine.py is currently command-line driven.")
+                print("   Launch parrot_engine.py manually to drive tests over line cables.")
             
         except Exception as e:
             print(f"❌ Initialization failure: {e}")
@@ -87,7 +101,7 @@ class PollyGUI:
 
     def on_closing(self):
         print("🛑 Close action flagged. Powering down background pipelines...")
-        if hasattr(self, 'engine'):
+        if hasattr(self, 'engine') and hasattr(self.engine, 'stop'):
             self.engine.stop()
         self.root.destroy()
 
