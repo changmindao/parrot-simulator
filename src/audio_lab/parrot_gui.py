@@ -1,18 +1,20 @@
 import tkinter as tk
 import threading
-# FIX 1: Point to the correct class name from parrot_engine
 from parrot_engine import ParrotEngine
 
 class PollyGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("🦜 Parrot Simulator")
-        self.root.geometry("400x300")
+        self.root.title("🦜 Polly Simulator")
+        # Expanded height slightly to accommodate the new exit button comfortably
+        self.root.geometry("400x350")
         self.root.resizable(False, False)
         
         # --- UI State Configuration ---
         self.states = {
             "sleeping": {"bg": "#2C3E50", "text": "#ECF0F1", "status": "💤 Polly is resting..."},
+            "wake_up": {"bg": "#9B59B6", "text": "#FFFFFF", "status": "⏰ Polly is waking up!"},
+            "woken_sleeping": {"bg": "#34495E", "text": "#ECF0F1", "status": "👀 Polly is alert & listening..."},
             "listening": {"bg": "#E74C3C", "text": "#FFFFFF", "status": "🔴 Listening! Speak now..."},
             "processing": {"bg": "#2980B9", "text": "#FFFFFF", "status": "⏳ Processing audio signal..."},
             "thinking": {"bg": "#F39C12", "text": "#FFFFFF", "status": "🧠 Polly is thinking..."},
@@ -27,7 +29,7 @@ class PollyGUI:
         self.main_frame.pack(fill=tk.BOTH, expand=True)
         
         self.avatar_label = tk.Label(self.main_frame, text="🦜", font=("Arial", 72), bg=self.main_frame["bg"])
-        self.avatar_label.pack(pady=40)
+        self.avatar_label.pack(pady=20)
         
         self.status_label = tk.Label(
             self.main_frame, 
@@ -38,6 +40,21 @@ class PollyGUI:
         )
         self.status_label.pack(pady=10)
         
+        # --- ADDED: EXIT BUTTON ---
+        self.exit_button = tk.Button(
+            self.main_frame,
+            text="Exit Simulator",
+            font=("Arial", 12, "bold"),
+            fg="#C0392B",          # Soft red text
+            bg="#ECF0F1",          # Light gray button body
+            activebackground="#BDC3C7",
+            command=self.on_closing, # Routes straight to your clean shutdown pipeline
+            relief=tk.RAISED,
+            padx=20,
+            pady=5
+        )
+        self.exit_button.pack(pady=20)
+        
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Start text animation loop
@@ -45,28 +62,16 @@ class PollyGUI:
         
         # --- Initialize Audio Engine ---
         try:
-            # FIX 2: Instantiate using correct class and pass state callback
-            # If your parrot_engine loop requires manual interaction during this phase, 
-            # ensure it doesn't block this worker thread indefinitely.
             self.engine = ParrotEngine()
-            
-            # Link the UI state switch directly into the engine state hook
-            # Note: You will need to add a small method to parrot_engine to store this hook.
             self.engine.state_callback = self.set_ui_state
             
             print("🦜 Starting core audio runtime inside worker thread...")
-            # If your engine has a long-running listening pipeline method (e.g. run_pipeline)
-            # we frame it here. For now, we point to a dummy runner thread loop if needed.
-            if hasattr(self.engine, 'run_pipeline'):
-                self.worker_thread = threading.Thread(
-                    target=self.engine.run_pipeline, 
-                    args=(self.safe_destroy,)
-                )
-                self.worker_thread.daemon = True
-                self.worker_thread.start()
-            else:
-                print("⚠️ Note: parrot_engine.py is currently command-line driven.")
-                print("   Launch parrot_engine.py manually to drive tests over line cables.")
+            self.worker_thread = threading.Thread(
+                target=self.engine.run_pipeline, 
+                args=(self.safe_destroy,)
+            )
+            self.worker_thread.daemon = True
+            self.worker_thread.start()
             
         except Exception as e:
             print(f"❌ Initialization failure: {e}")
@@ -101,7 +106,7 @@ class PollyGUI:
 
     def on_closing(self):
         print("🛑 Close action flagged. Powering down background pipelines...")
-        if hasattr(self, 'engine') and hasattr(self.engine, 'stop'):
+        if hasattr(self, 'engine'):
             self.engine.stop()
         self.root.destroy()
 

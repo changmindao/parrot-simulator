@@ -13,7 +13,9 @@ DEFAULT_MODE_TTS = "mac_say"
 
 SAMPLE_RATE = 48000
 CHUNK_SIZE = 512
-ENERGY_THRESHOLD = 0.02  # Noise gate for incoming line-level signal
+ENERGY_THRESHOLD = 0.02
+ENERGY_THRESHOLD_ACTIVE = 0.01
+ENERGY_THRESHOLD_INACTIVE = 0.05
 
 
 class ParrotEngine:
@@ -23,13 +25,13 @@ class ParrotEngine:
         self.mode_llm = mode_llm
         self.mode_tts = mode_tts
         
-        # UI state callback hook
         self.state_callback = None
         self.is_running = False
-        
-        # --- THE KEY TRACKING FLAG ---
-        # True when the parrot is actively speaking to prevent feedback loops
         self.is_speaking = False 
+        self.listener_thread = None
+        
+        # Internal state indicator tracking for the FSM flow
+        self.current_state = "sleeping"
         
         print(f"[*] Parrot Engine Initialized")
         print(f"    - ASR Mode: {self.mode_asr}")
@@ -38,12 +40,13 @@ class ParrotEngine:
 
     def set_state(self, state_name):
         """Safely signals state updates back to the Tkinter GUI thread."""
+        self.current_state = state_name
         if self.state_callback:
             self.state_callback(state_name)
 
     def speak(self, text):
         """Dynamically synthesizes text using system subprocesses."""
-        self.is_speaking = True  # Block the recording loop from listening
+        self.is_speaking = True  
         self.set_state("speaking")
         print(f"[Parrot Speaker]: '{text}'")
         
@@ -55,10 +58,9 @@ class ParrotEngine:
             else:
                 raise NotImplementedError(f"TTS Mode '{self.mode_tts}' is not supported.")
         finally:
-            self.set_state("sleeping")
-            # Small cooldown cushion to let mechanical/electrical echo subside
+            # Drop down handled conditionally by the listen loop lifecycle
             time.sleep(0.1) 
-            self.is_speaking = False  # Unblock the recording loop
+            self.is_speaking = False  
 
     def mock_asr_process(self):
         """Simulates processing frame buffer decoding delay."""
@@ -73,7 +75,6 @@ class ParrotEngine:
         return "The capital of France is Paris."
 
     def _listen_loop(self):
-        """Background thread loop dedicated entirely to recording input."""
         p = pyaudio.PyAudio()
         stream = p.open(
             format=pyaudio.paFloat32,
@@ -83,72 +84,86 @@ class ParrotEngine:
             frames_per_buffer=CHUNK_SIZE
         )
         
-        has_woken_up = False
+        # --- THE TIME-BASED COOLDOWN COUNTER ---
+        # Keeps track of how many real-time hardware chunks to ignore after speaking
+        cooldown_chunks = 0
         
         try:
             while self.is_running:
+                # This read() acts as our perfect 10.67ms hardware timer lock
                 raw_data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 
-                # If the player engine is running text-to-speech, completely 
-                # ignore incoming audio chunks to break the loopback oscillation.
+                # 1. If Polly is currently speaking, drop the data
                 if self.is_speaking:
                     continue
+                    
+                # 2. New Cooldown Guard: Count down in real hardware time (10.67ms per chunk)
+                if cooldown_chunks > 0:
+                    cooldown_chunks -= 1
+                    continue  # Safely ignore this chunk while the audio line clears
                     
                 audio_chunk = np.frombuffer(raw_data, dtype=np.float32)
                 rms_energy = np.sqrt(np.mean(audio_chunk**2))
                 
                 if rms_energy > ENERGY_THRESHOLD:
-                    if not has_woken_up:
+                    if self.current_state == "sleeping":
                         self.set_state("listening")
-                        time.sleep(0.5)  # Let the host finish speaking
-                        print("[Event]: Wake-Up Signal Detected on Line-In!")
+                        time.sleep(0.5)  # Let wake phrase finish
                         
-                        # Trigger execution (will set self.is_speaking = True)
+                        self.set_state("wake_up")
+                        print("[Event]: Wake-Up Word Decoded!")
                         self.speak("I am Polly. What's up?")
-                        has_woken_up = True
-                    else:
+                        
+                        # --- SET THE COOLDOWN ---
+                        # Force the engine to ignore everything for the next 30 chunks (~320ms)
+                        cooldown_chunks = 30 
+                        
+                        self.set_state("woken_sleeping")
+                        print("[State]: Alert & waiting for command query...")
+                        
+                    elif self.current_state == "woken_sleeping":
                         self.set_state("listening")
-                        time.sleep(1.0)  # Let the host finish speaking
-                        print("[Event]: Command Request Detected on Line-In...")
+                        time.sleep(1.2)  # Let command payload finish
+                        print("[Event]: Command Query Decoded!")
                         
                         user_text = self.mock_asr_process()
                         llm_response = self.mock_llm_process(user_text)
                         
-                        # Trigger execution (will set self.is_speaking = True)
                         self.speak(llm_response)
-                        has_woken_up = False
+                        
+                        # --- SET THE COOLDOWN ---
+                        # Force a reset cooldown before allowing another wake word
+                        cooldown_chunks = 30
+                        
+                        self.set_state("sleeping")
+                        print("[State]: Cycle complete. Returning to baseline sleep.")
                         
                 time.sleep(0.001)
-                
+
         except Exception as e:
             print(f"❌ Error in listening thread: {e}")
         finally:
             stream.stop_stream()
             stream.close()
             p.terminate()
+            print("[*] Audio hardware stream released safely.")
 
     def run_pipeline(self, destroy_callback=None):
-        """
-        Launches the detached recorder loop process thread and returns immediately
-        to keep the calling thread (like Tkinter or the CLI main input) completely unblocked.
-        """
+        """Launches the detached recorder loop process thread."""
         self.is_running = True
-        
-        print("="*60)
-        print("  PARROT ENGINE SUT RUNNING (Awaiting Host Audio Triggers)")
-        print("="*60)
-        
         self.set_state("sleeping")
         
-        # Spin up the recording path completely independently
         self.listener_thread = threading.Thread(target=self._listen_loop)
         self.listener_thread.daemon = True
         self.listener_thread.start()
-        
 
     def stop(self):
-        """Stops the audio background execution thread."""
+        """Stops the audio background execution thread cleanly."""
+        print("[*] Stopping background pipelines...")
         self.is_running = False
+        if self.listener_thread:
+            self.listener_thread.join(timeout=1.0)
+
 
 if __name__ == "__main__":
     parrot = ParrotEngine()
@@ -156,22 +171,17 @@ if __name__ == "__main__":
     
     print("\n" + "="*60)
     print("  CLI INTERACTIVE CONTROLLER ACTIVE")
-    print("  - Audio pipeline is running asynchronously in the background.")
-    print("  - To terminate the test rig safely, press [C] or [Q] and hit Enter.")
+    print("  - Short & Long listening loops operating concurrently.")
+    print("  - Press [C] or [Q] to exit safely.")
     print("="*60 + "\n")
     
-    # Use the main thread to capture terminal keyboard inputs cleanly
     try:
         while True:
             user_input = input("Command -> ").strip().lower()
             if user_input in ['c', 'q']:
-                print("\n[*] Termination key detected. Powering down pipelines...")
                 parrot.stop()
                 break
-            else:
-                print(f"[*] Unknown command '{user_input}'. Press 'c' or 'q' to exit.")
     except (KeyboardInterrupt, SystemExit):
         parrot.stop()
         
-    print("[*] Exit complete. Goodbye!")
     sys.exit(0)
