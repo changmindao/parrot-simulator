@@ -1,6 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from pyaudio_runner import play_and_record
+from src.utility.pyaudio_runner import play_and_record
+
 
 CHUNK_SIZE = 1024
 INPUT_DEVICE = 2

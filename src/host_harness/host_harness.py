@@ -4,10 +4,14 @@ import os
 import soundfile as sf
 import sounddevice as sd
 
+from src.utility.pyaudio_runner import play_and_record
+from src.utility.play_audio import play_audio
+from src.utility.record_audio import record_audio
+
 # --- HARDWARE CALIBRATION CONSTANTS ---
-LOOPBACK_DELAY_MS = 23.479  # Your calibrated hardware offset
+LOOPBACK_DELAY_MS = 42.812  # Your calibrated hardware offset
 SAMPLE_RATE = 48000
-NUM_ITERATIONS = 50
+NUM_ITERATIONS = 3     # 50 for final test
 SILENCE_GAP_SEC = 3.0  # Time allowed for Polly to speak her wake reply
 
 class HostTestHarness:

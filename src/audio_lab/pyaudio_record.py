@@ -5,6 +5,7 @@ import soundfile as sf
 import pyaudio
 import numpy as np
 
+
 # --- DEFAULT HARDWARE CONFIGURATION ---
 SAMPLE_RATE = 48000
 CHUNK_SIZE = 512

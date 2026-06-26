@@ -1,6 +1,9 @@
 # Python virtual environment
 venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 
 # Temporary audio files
@@ -12,8 +15,14 @@ __pycache__/
 # Ensure requirements.txt is never ignored
 !requirements.txt
 
-# IDE Settings
-.vscode/
+
+# IDE configurations to exclude
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/workspaceState.json
+
+# Keep the settings profile tracked
+!.vscode/settings.json
 
 # macOS system files
 .DS_Store
